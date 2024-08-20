@@ -231,6 +231,7 @@ func (s *Subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 
 	s.outputsWg.Add(1)
 	outputWg := &sync.WaitGroup{}
+	processingMessages := sync.WaitGroup{}
 
 	for i := 0; i < s.config.SubscribersCount; i++ {
 		outputWg.Add(1)
@@ -243,6 +244,9 @@ func (s *Subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 		s.logger.Debug("Starting subscriber", subscriberLogFields)
 
 		sub, err := s.subscribe(topic, func(msg *nats.Msg) {
+			processingMessages.Add(1)
+			defer processingMessages.Done()
+
 			s.processMessage(ctx, msg, output, subscriberLogFields)
 		})
 		if err != nil {
@@ -251,6 +255,7 @@ func (s *Subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 
 		go func(subscriber *nats.Subscription, subscriberLogFields watermill.LogFields) {
 			defer outputWg.Done()
+
 			select {
 			case <-s.closing:
 				// unblock
@@ -267,6 +272,7 @@ func (s *Subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 	go func() {
 		defer s.outputsWg.Done()
 		outputWg.Wait()
+		processingMessages.Wait()
 		close(output)
 	}()
 
