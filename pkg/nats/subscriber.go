@@ -231,8 +231,8 @@ func (s *Subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 
 	s.outputsWg.Add(1)
 	outputWg := &sync.WaitGroup{}
-	processingMessages := sync.WaitGroup{}
 
+	mu := sync.RWMutex{}
 	for i := 0; i < s.config.SubscribersCount; i++ {
 		outputWg.Add(1)
 
@@ -244,13 +244,10 @@ func (s *Subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 		s.logger.Debug("Starting subscriber", subscriberLogFields)
 
 		sub, err := s.subscribe(topic, func(msg *nats.Msg) {
-			select {
-			case <-ctx.Done():
+			if !mu.TryRLock() {
 				return
-			default:
 			}
-			processingMessages.Add(1)
-			defer processingMessages.Done()
+			defer mu.RUnlock()
 
 			s.processMessage(ctx, msg, output, subscriberLogFields)
 		})
@@ -277,7 +274,9 @@ func (s *Subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 	go func() {
 		defer s.outputsWg.Done()
 		outputWg.Wait()
-		processingMessages.Wait()
+		mu.Lock()
+		defer mu.Unlock()
+
 		close(output)
 	}()
 
