@@ -244,6 +244,11 @@ func (s *Subscriber) Subscribe(ctx context.Context, topic string) (<-chan *messa
 		s.logger.Debug("Starting subscriber", subscriberLogFields)
 
 		sub, err := s.subscribe(topic, func(msg *nats.Msg) {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			processingMessages.Add(1)
 			defer processingMessages.Done()
 
